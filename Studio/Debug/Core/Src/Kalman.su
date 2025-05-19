@@ -1,0 +1,3 @@
+../Core/Src/Kalman.c:4:6:KalmanInit	336	static
+../Core/Src/Kalman.c:105:6:KalmanPrediction	184	static
+../Core/Src/Kalman.c:136:6:KalmanUpdate	360	static
