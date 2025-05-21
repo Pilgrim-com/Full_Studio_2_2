@@ -1,2 +1,3 @@
 ../Core/Src/QEI.c:12:6:QEIInit	1
 ../Core/Src/QEI.c:32:6:QEIPosVelUpdate	3
+../Core/Src/QEI.c:62:6:QEI_Reset	1

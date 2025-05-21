@@ -31,12 +31,13 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+// LOW PASS cutoff frequency
+#define FC   5.0f
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define PRISM_UPDATE_THRESH 40.0f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -104,6 +105,20 @@ float32_t A_f32_prismatic[16] = { 1.0, 0.001, -0.0453, -0.0001, 0.0, 0.9740,
 
 float32_t B_f32_prismatic[4] = { 0.0003, 0.6895, 0.0, 0.5453 };
 
+// Prismatic low-pass
+// LOW Pass filter
+const float dt = 0.001f;
+const float RC = 1.0f / (2.0f * 3.1415926f * FC);
+const float alpha = dt / (RC + dt);
+float prismatic_lowpass_prev = 0.0f;  // filter state
+float prismatic_lowpass = 0.0f;
+
+// Acceleration
+float prismatic_acceleration = 0.0f;
+float prismatic_acceleration_lowpass = 0.0f;
+float prismatic_acceleration_lowpass_prev = 0.0f;
+
+
 // unit converter
 double prismatic_kalman_rads;
 double prismatic_kalman_radps;
@@ -111,12 +126,12 @@ double ball_screw_pos;
 double ball_screw_vel;
 
 // kalman
-float Q_prismatic = 0.3;
+float Q_prismatic = 0.01;
 float R_prismatic = 1.0;
 
 //REvolute
 QEI revolute_encoder;
-uint8_t revolute_flag = 0;
+uint8_t revolute_flag = 1;
 CONTROLLER revolute_pos_control;
 CONTROLLER revolute_vel_control;
 KALMAN revolute_kalman;
@@ -129,6 +144,8 @@ float32_t B_f32_revolute[4] = { 0.0001, 0.1143, 0, 0.9049 };
 // unit converter
 double revolute_kalman_rads;
 double revolute_kalman_radps;
+uint8_t limit_r = 0;
+uint8_t limit_l = 0;
 
 // kalman
 float Q_revolute = 1.0;
@@ -235,9 +252,11 @@ int main(void)
 			R_prismatic);
 	KalmanInit(&revolute_kalman, A_f32_revolute, B_f32_revolute, Q_revolute,
 			R_revolute);
+
 	HAL_TIM_Base_Start_IT(&htim5);
 
 	HAL_TIM_Base_Start_IT(&htim2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -772,8 +791,8 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : B1_Pin PC3 */
-  GPIO_InitStruct.Pin = B1_Pin|GPIO_PIN_3;
+  /*Configure GPIO pins : B1_Pin PC3 PC4 */
+  GPIO_InitStruct.Pin = B1_Pin|GPIO_PIN_3|GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
@@ -802,12 +821,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PC4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB11 PB12 */
   GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
@@ -870,43 +883,48 @@ void ball_screw_converter() {
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == B1_Pin) {
-		tim2_counter = 0;
-		burst_mode = 1;
-		flag = (flag == 0) ? 1 : 0;
+		burst_mode = (burst_mode == 0) ? 1 : 0;
 	}
-//	if(GPIO_Pin == 11){
-//		prismatic_encoder.new_val = 0;
-//		prismatic_encoder.old_val = 0;
-//		prismatic_encoder.pulses = 0;
-//		prismatic_encoder.revs = 0;
-//		prismatic_encoder.rads = 0;
-//		prismatic_encoder.radps = 0;
-//		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-//	}
-	if (GPIO_Pin == 4) {
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+	if (GPIO_Pin == GPIO_PIN_12) {
+		burst_mode = 0;
+//		limit_r = (limit_r == 0) ? 1 : 0;
+	}
+	if (GPIO_Pin == GPIO_PIN_11) {
+		burst_mode = 1;
 //		revlolute_flag = (revlolute_flag == 0) ? 1 : 0;
+	}
+	if (GPIO_Pin == GPIO_PIN_4) {
+		revolute_flag = 0;
 	}
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
-
 	// sensor timer 1000 hz
 	if (htim == &htim2) {
-
-
+//		limit_l = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_11);
+//		limit_r = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12);
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 //		MotorSet(&prismatic_motor, 1000, 65535);
 		QEIPosVelUpdate(&prismatic_encoder);
 		QEIPosVelUpdate(&revolute_encoder);
 //		Prismatic_CasCadeControl();
 
 //		error_rads = prismatic_encoder.rads - prismatic_kalman.X_pred.pData[0];
+
+		// Prismatic_sensor
 		KalmanUpdate(&prismatic_kalman, (prismatic_encoder.rads));
-		KalmanPrediction(&prismatic_kalman, (output_prismatic * (12.0 / 65535.0)));
+		KalmanPrediction(&prismatic_kalman,
+				(output_prismatic * (12.0 / 65535.0)));
 
 		prismatic_kalman_rads = prismatic_kalman.X_pred.pData[0];
 		prismatic_kalman_radps = prismatic_kalman.X_pred.pData[1];
+
+		prismatic_lowpass = prismatic_lowpass_prev + alpha * (prismatic_encoder.radps -  prismatic_lowpass_prev);
+		prismatic_acceleration = ((prismatic_lowpass - prismatic_lowpass_prev) / dt);
+		prismatic_lowpass_prev = prismatic_lowpass;
+
+		prismatic_acceleration_lowpass = prismatic_acceleration_lowpass_prev + alpha * (prismatic_acceleration -  prismatic_acceleration_lowpass_prev);
 //
 //		KalmanUpdate(&revolute_kalman, (revolute_encoder.rads));
 //		KalmanPrediction(&revolute_kalman, (output_velo * (12.0 / 65535.0)));
@@ -914,22 +932,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 //		revolute_kalman_rads = revolute_kalman.X_pred.pData[0];
 //		revolute_kalman_radps = revolute_kalman.X_pred.pData[1];
 		ball_screw_converter();
-
-
-		if (burst_mode == 1)
-		{
-			if (tim2_counter < 2000)
-			{
-				output_prismatic = (flag == 1) ? 65535 : -65535;
-			}
-			else
-			{
-				output_prismatic = 0;
-				burst_mode = 0;
-			}
+//
+		if (burst_mode == 0) {
+			output_prismatic = 65535;
+		} else {
+			output_prismatic = -65535;
 		}
-		tim2_counter++;
 
+		if (revolute_flag == 1) {
+			output_revolute = 65535;
+		} else {
+			output_revolute = 0;
+		}
+
+		tim2_counter++;
+//
 		MotorSet(&prismatic_motor, 1000, output_prismatic);
 		MotorSet(&revolute_motor, 1000, output_revolute);
 
@@ -947,56 +964,44 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		// Pen state
 
 		// ROBOT position and speed
-		registerFrame[11].U16 = (int) (ball_screw_pos * 10);
-		registerFrame[12].U16 = (int) (revolute_kalman_rads * (180/M_PI) * 10);
-		registerFrame[13].U16 = (int) (ball_screw_vel * 10);
-		registerFrame[14].U16 = (int) (revolute_kalman_radps * (180/M_PI) * 10);
-		registerFrame[15].U16 = (int) (((prismatic_kalman_radps - prev_prismatic_vel)/0.001) * 10);
-		registerFrame[16].U16 = (int) (((revolute_kalman_radps - prev_revolute_vel)/0.001) * 10);
 
-		prev_prismatic_vel = prismatic_kalman_radps;
-		prev_revolute_vel = revolute_kalman_radps;
+		 registerFrame[11].U16 = (int) (ball_screw_pos * 10);
+//		 registerFrame[12].U16 = (int) (revolute_kalman_rads * (180/M_PI) * 10);
+		 registerFrame[13].U16 = (int) (ball_screw_vel * 10);
+//		 registerFrame[14].U16 = (int) (revolute_kalman_radps * (180/M_PI) * 10);
+		 registerFrame[15].U16 = (int) (prismatic_acceleration_lowpass * 10);
+//		 registerFrame[16].U16 = (int) (((revolute_kalman_radps - prev_revolute_vel)/0.001) * 10);
 
 
 	}
 
 	// state timer 1000 hz
-	if (htim == &htim5)
-	{
-
-		switch (state)
-		{
-		case 0:
-			//state 0 (waiting for start setting home):
-			if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) == GPIO_PIN_SET)
-			{
-				//set home here
-				state_set_home();
-				state++;
-
-			}
-			break;
-		case 1:
-
-			if ()
-
-		}
-
-
-	}
-
-
-
-
+//	if (htim == &htim5) {
+//
+////		switch (state)
+////		{
+////		case 0:
+////			//state 0 (waiting for start setting home):
+////			if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_4) == GPIO_PIN_SET)
+////			{
+////				//set home here
+////				state_set_home();
+////				state++;
+////
+////			}
+////			break;
+////		case 1:
+////
+////			if ()
+////		}
+//	}
 }
 
-void state_set_home()
-{
+void state_set_home() {
 	registerFrame[10].U16 = 1;
 	// set home here
 	registerFrame[10].U16 = 14;
 }
-
 
 void set_moving_status(MovingStatusFlags new_status) {
 	registerFrame[0x10].U16 = 0;

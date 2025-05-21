@@ -42,4 +42,6 @@ void QEIInit(QEI *qei, TIM_HandleTypeDef *htim_qei, int32_t ppr, float frequency
 
 void QEIPosVelUpdate(QEI *qei);
 
+void QEI_Reset(QEI *qei);
+
 #endif /* INC_QEI_H_ */

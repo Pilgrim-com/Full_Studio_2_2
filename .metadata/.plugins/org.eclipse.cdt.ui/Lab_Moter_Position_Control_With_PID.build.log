@@ -1,0 +1,10 @@
+00:41:33 **** Incremental Build of configuration Debug for project Lab_Moter_Position_Control_With_PID ****
+make -j20 all 
+arm-none-eabi-size  Lab_Moter_Position_Control_With_PID.elf 
+   text	   data	    bss	    dec	    hex	filename
+  25104	     12	   2056	  27172	   6a24	Lab_Moter_Position_Control_With_PID.elf
+Finished building: default.size.stdout
+ 
+
+00:41:34 Build Finished. 0 errors, 0 warnings. (took 490ms)
+
