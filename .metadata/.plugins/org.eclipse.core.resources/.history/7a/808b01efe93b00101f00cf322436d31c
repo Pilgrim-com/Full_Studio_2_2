@@ -76,7 +76,7 @@ ModbusHandleTypedef hmodbus;
 volatile u16u8_t registerFrame[70];
 //state machine
 typedef enum {
-	STATUS_HOME = 1 << 0,        // 00001 = 1 - สถานะโฮมมิ่ง
+	STATUS_IDLE = 0000, STATUS_HOME = 1 << 0,        // 00001 = 1 - สถานะโฮมมิ่ง
 	STATUS_JOG = 1 << 1,         // 00010 = 2 - สถานะจ็อกกิ้ง
 	STATUS_POINT = 1 << 2,       // 00100 = 4 - สถานะเคลื่อนที่แบบจุดต่อจุด
 	STATUS_GO_TO_TARGET = 1 << 3,       // 01000 = 8 - สถานะไปยังตำแหน่งเป้าหมาย
@@ -122,11 +122,12 @@ float Kd_pos_pris = 0.01;
 float output_pos_pris = 0.00;
 float error_pos_pris = 0.00;
 //PID_Position CMSIS
-arm_pid_instance_f32 PID_POS = { 0 };
+arm_pid_instance_f32 PID_POS_pris = { 0 };
+arm_pid_instance_f32 PID_POS_re   = { 0 };
 
 int32_t setpoint = 0;
 float output_prismatic = 0;
-float output_revolute;
+float output_revolute = 0;
 
 QEI prismatic_encoder;
 CONTROLLER prismatic_pos_control;
@@ -187,6 +188,13 @@ float R_revolute = 1.0;
 float motor_voltage = 0.0;
 float error_rads = 0.0;
 
+// PID_Velocity gain
+float Kp_pos_re = 95.0;
+float Ki_pos_re = 1.0;         //8.5;
+float Kd_pos_re = 6.5;
+float output_pos_re = 0.00;
+float error_pos_re = 0.00;
+
 //Revolute Velo Control
 float Kp_velo_re = 95.0;
 float Ki_velo_re = 1.0;         //8.5;
@@ -219,6 +227,8 @@ uint16_t Prox_RawRead[10];
 uint8_t state = 0;
 uint8_t button_reset = 0;
 uint8_t button_run = 0;
+uint8_t waiting_state = 0;
+uint8_t button_emer = 0;
 
 /* USER CODE END PV */
 
@@ -290,10 +300,15 @@ int main(void)
 	hmodbus.RegisterSize = 70;
 	Modbus_init(&hmodbus, registerFrame);
 
-	PID_POS.Kp = Kp_pos_pris;
-	PID_POS.Ki = Ki_pos_pris;
-	PID_POS.Kd = Kd_pos_pris;
-	arm_pid_init_f32(&PID_POS, 0);
+	PID_POS_pris.Kp = Kp_pos_pris;
+	PID_POS_pris.Ki = Ki_pos_pris;
+	PID_POS_pris.Kd = Kd_pos_pris;
+	arm_pid_init_f32(&PID_POS_pris, 0);
+
+	PID_POS_re.Kp = Kp_pos_pris;
+	PID_POS_re.Ki = Ki_pos_pris;
+	PID_POS_re.Kd = Kd_pos_pris;
+	arm_pid_init_f32(&PID_POS_re, 0);
 
 	MotorInit(&prismatic_motor, &htim1, TIM_CHANNEL_3, GPIOC, GPIO_PIN_7);
 	MotorInit(&revolute_motor, &htim1, TIM_CHANNEL_2, GPIOC, GPIO_PIN_6);
@@ -301,8 +316,8 @@ int main(void)
 	QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
 	QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
 
-	PIDInit(&prismatic_pos_control, 340, -340);
 	PIDInit(&prismatic_vel_control, 65535, -65535);
+	PIDInit(&revolute_vel_control, 65535, -65535);
 
 	KalmanInit(&prismatic_kalman, A_f32_prismatic, B_f32_prismatic, Q_prismatic,
 			R_prismatic);
@@ -931,14 +946,14 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_10, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : EMER_Pin PC4 */
-  GPIO_InitStruct.Pin = EMER_Pin|GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : RUN_Pin PC3 */
-  GPIO_InitStruct.Pin = RUN_Pin|GPIO_PIN_3;
+  /*Configure GPIO pin : PC3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
@@ -948,12 +963,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : RESET_Pin */
-  GPIO_InitStruct.Pin = RESET_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(RESET_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -968,6 +977,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PB13 PB14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /*Configure GPIO pins : PC6 PC7 PC10 */
   GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_10;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -975,10 +990,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+  /*Configure GPIO pin : PC9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
@@ -991,7 +1009,7 @@ static void MX_GPIO_Init(void)
 void Prismatic_CasCadeControl() {
 	error_pos_pris = target_position_prismatic - ball_screw_pos;
 
-	output_pos_pris = arm_pid_f32(&PID_POS, error_pos_pris);
+	output_pos_pris = arm_pid_f32(&PID_POS_pris, error_pos_pris);
 
 	if (output_pos_pris > 300) {
 		output_pos_pris = 300;
@@ -1013,17 +1031,24 @@ void Prismatic_CasCadeControl() {
 	}
 }
 
-void Joystick_COntrol() {
-	//Joy x -> Prismatic
-	error_velo_pris = Joy_x - ball_screw_vel;
-	output_velo_pris = PIDCompute(&prismatic_vel_control, Kp_velo_pris,
-			Ki_velo_pris, Kd_velo_pris, error_velo_pris);
-	MotorSet(&prismatic_motor, 1000, output_velo_pris);
-	//Joy y -> Revolute
-	error_velo_re = Joy_y - revolute_encoder.rads;
-	output_velo_re = PIDCompute(&revolute_vel_control, Kp_velo_re, Ki_velo_re,
-			Kd_velo_re, error_velo_re);
-	MotorSet(&revolute_motor, 1000, output_velo_re);
+void Revolute_CasCadeControl() {
+	error_pos_re = target_position_revolute - revolute_encoder.rads;
+
+	output_pos_re = arm_pid_f32(&PID_POS_re, error_pos_re);
+
+//	if (output_pos_re > 300) {
+//		output_pos_re = 300;
+//	} else if (output_pos_re < -300) {
+//		output_pos_re = -300;
+//	}
+
+	error_velo_re = output_pos_re - revolute_encoder.radps;
+
+	output_velo_re = PIDCompute(&revolute_vel_control, Kp_velo_re,
+			Ki_velo_re, Kd_velo_re, error_velo_re);
+
+	// Motor control
+	output_revolute = -1.0 * output_velo_re;
 }
 
 void ball_screw_converter() {
@@ -1033,8 +1058,8 @@ void ball_screw_converter() {
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if (GPIO_Pin == GPIO_PIN_13) {
-		burst_mode = (burst_mode == 0) ? 1 : 0;
-//		output_prismatic = (output_prismatic == 65535) ? -65535 : 65535;
+		current_state = STATE_ERROR;
+		registerFrame[1].U16 = STATUS_IDLE;
 	}
 	if (GPIO_Pin == GPIO_PIN_12) {
 		output_prismatic = (output_prismatic == 65535) ? -65535 : 65535;
@@ -1060,10 +1085,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	// sensor timer 1000 hz
 	if (htim == &htim2) {
 		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-//		MotorSet(&prismatic_motor, 1000, 65535);
+//		MotorSet(&revolute_motor, 1000, 65535);
 		QEIPosVelUpdate(&prismatic_encoder);
 		QEIPosVelUpdate(&revolute_encoder);
-
 		//Joy Calculate
 
 		// filter
@@ -1078,10 +1102,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		int32_t raw_x = sum_x / 10;
 		int32_t raw_y = sum_y / 10;
 
-		if (raw_x < 2100 && raw_x > 1900) {
+		if (raw_x < 1700 && raw_x > 1500) {
 			raw_x = 4096 / 2;
 		}
-		if (raw_y < 2100 && raw_y > 1900) {
+		if (raw_y < 1700 && raw_y > 1500) {
 			raw_y = 4096 / 2;
 		}
 
@@ -1115,15 +1139,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			revolute_flag = 0;
 		}
 
-
 		//button
-		button_reset = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN4);
-		button_set = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_0);
 
+		button_emer =
+				(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) ? 1 : 0;
+
+		button_reset =
+				(HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14) == GPIO_PIN_SET
+						&& button_emer == 1) ? 1 : 0;
+
+		button_run =
+				(HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13) == GPIO_PIN_SET
+						&& button_emer) ? 1 : 0;
 //		revolute_flag = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0);
 
 //		Prismatic_CasCadeControl();
 //		Joystick_COntrol();
+
+//		MotorSet(&prismatic_motor, 1000, output_prismatic);
+		MotorSet(&revolute_motor, 1000, output_revolute);
 
 		// Protocal
 
@@ -1133,6 +1167,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			registerFrame[0].U16 = (registerFrame[0].U16 == 0) ? 22881 : 0;
 		}
 		heartbeat_counter++;
+
+		tim2_counter++;
 
 	}
 
@@ -1147,13 +1183,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 		if (registerFrame[1].U16 & STATUS_HOME) {
 			current_state = STATE_HOMING;
-		} else if (registerFrame[0x01].U16 & STATUS_JOG) {
+		} else if (registerFrame[1].U16 & STATUS_JOG) {
 			current_state = STATE_JOGGING;
 			registerFrame[10].U16 = STATUS_JOG;
-		} else if (registerFrame[0x01].U16 & STATUS_POINT) {
+		} else if (registerFrame[1].U16 & STATUS_POINT) {
 			current_state = STATE_POINT_MOVING;
 			registerFrame[10].U16 = STATUS_POINT;
-		} else if (registerFrame[0x01].U16 & STATUS_GO_TO_TARGET) {
+		} else if (registerFrame[1].U16 & STATUS_GO_TO_TARGET) {
 			current_state = STATE_GO_TO_TARGET;
 			registerFrame[10].U16 = STATUS_GO_TO_TARGET;
 		}
@@ -1166,49 +1202,57 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			registerFrame[3].U16 = 1 << 1;
 		}
 
+		if (button_reset == 1 ){
+			registerFrame[1].U16 = STATUS_HOME;
+		}
+
 		switch (current_state) {
 		case STATE_HOMING:
-			if (limit_r != 1) {
-				output_prismatic = (limit_l == 0) ? 65535 : -65535;
-				MotorSet(&prismatic_motor, 1000, output_prismatic);
-				point_flag = 2;
-			} else if (limit_r == 1) {
-				current_state = STATE_HOMING;
-				registerFrame[10].U16 = STATUS_HOME;
-				MotorSet(&prismatic_motor, 1000, 0);
-				QEI_Reset(&prismatic_encoder);
-				QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
-				point_flag = 3;
-				limit_r = 0;
-			}
+//			if (limit_r != 1) {
+//				output_prismatic = (limit_l == 0) ? 65535 : -65535;
+//				point_flag = 2;
+//			} else if (limit_r == 1) {
+//				output_prismatic = 0;
+//				QEI_Reset(&prismatic_encoder);
+//				QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
+//				point_flag = 3;
+//				limit_r = 0;
+//			}
+			if (revolute_flag != 1) {
+				output_revolute = -65535;
+			} else if (revolute_flag == 1) {
 
-			if(revolute_flag != 1){
-				output_revolute = 65535;
-				MotorSet(&revolute_motor, 1000, output_revolute);
-			}
-			else if(revolute_flag == 1){
+				waiting_state = 0;
 				output_revolute = 0;
-				MotorSet(&revolute_motor, 1000, output_revolute);
 				QEI_Reset(&revolute_encoder);
-				QEIInit(&revolute_encoder, &htim4, 8192, 1000, 65536);
+				QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
 			}
+			registerFrame[10].U16 = STATUS_HOME;
 			break;
 
 		case STATE_JOGGING:
 			//Call joystick mode
 			joy_flag = 1;
-			Joystick_COntrol();
+			//Joy x -> Prismatic
+		//	error_velo_pris = Joy_x - ball_screw_vel;
+		//	output_velo_pris = PIDCompute(&prismatic_vel_control, Kp_velo_pris,
+		//			Ki_velo_pris, Kd_velo_pris, error_velo_pris);
+		//	MotorSet(&prismatic_motor, 1000, output_velo_pris);
+			//Joy y -> Revolute
+			error_velo_re = (Joy_y / 100.0) * 65535;
+			output_revolute = output_velo_re;
 			break;
 
 		case STATE_POINT_MOVING:
 			target_position_prismatic = registerFrame[64].U16 / 10;
-			target_position_revolute = registerFrame[65].U16 / 10;
+			target_position_revolute = (registerFrame[65].U16 / 10) * 2;
+//			target_position_revolute = (target_position_revolute > 360) ? 360 : target_position_revolute;
 			point_flag = 1;
 			break;
 
 		case STATE_GO_TO_TARGET:
-			//			Prismatic_CasCadeControl();
-			//			Revolute_CasCadeControl();
+
+			Revolute_CasCadeControl();
 			Prismatic_CasCadeControl();
 			registerFrame[11].U16 = (int) (ball_screw_pos * 10);
 			//			registerFrame[12].U16 = (int) (revolute_kalman_rads * (180 / M_PI)
@@ -1219,25 +1263,37 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			registerFrame[15].U16 = (int) (prismatic_acceleration_lowpass * 10);
 			//			registerFrame[16].U16 = (int) (((revolute_kalman_radps
 			//					- prev_revolute_vel) / 0.001) * 10);
-			if (prismatic_kalman_rads < 0.2 && revolute_kalman_rads <= 0.2) {
-				current_state = STATE_STOPPING;
-				point_flag = 0;
-			}
+//			if (prismatic_kalman_rads < 0.2 && revolute_kalman_rads <= 0.2) {
+//				current_state = STATE_STOPPING;
+//				point_flag = 0;
+//			}
+			break;
 		case STATE_STOPPING:
 			// ขั้นตอนหยุดฉุกเฉิน
 			//			stop_all_motors();
 			registerFrame[10].U16 = STATUS_STOP;
-			MotorSet(&prismatic_motor, 1000, 0);
-			MotorSet(&revolute_motor, 1000, 0);
+			output_revolute = 0;
+			output_prismatic = 0;
 			break;
 
 		case STATE_ERROR:
 			//when emergency trick
-			while (1) {
-				//if stop emergency or reset break loop
-			}
+			output_revolute = 0;
+			output_prismatic = 0;
+			MotorSet(&prismatic_motor, 1000, 0);
+			MotorSet(&revolute_motor, 1000, 0);
+//			registerFrame[1].U16 = STATUS_ERROR;
+			break;
 		}
 	}
+}
+
+void delay_ms(uint32_t ms) {
+	while (tim2_counter < ms) {
+		waiting_state = 1;
+	}
+	tim2_counter = 0;
+	waiting_state = 0;
 }
 /* USER CODE END 4 */
 

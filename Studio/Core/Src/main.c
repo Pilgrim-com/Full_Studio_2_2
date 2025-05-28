@@ -1048,7 +1048,7 @@ void Revolute_CasCadeControl() {
 			Ki_velo_re, Kd_velo_re, error_velo_re);
 
 	// Motor control
-	output_revolute = -1.0 * output_velo_re;
+	output_revolute = output_velo_re;
 }
 
 void ball_screw_converter() {
