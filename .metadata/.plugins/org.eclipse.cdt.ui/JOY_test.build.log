@@ -1,4 +1,4 @@
-17:39:03 **** Incremental Build of configuration Debug for project JOY_test ****
+12:47:08 **** Build of configuration Debug for project JOY_test ****
 make -j20 all 
 arm-none-eabi-size  JOY_test.elf 
    text	   data	    bss	    dec	    hex	filename
@@ -6,5 +6,5 @@ arm-none-eabi-size  JOY_test.elf
 Finished building: default.size.stdout
  
 
-17:39:04 Build Finished. 0 errors, 0 warnings. (took 206ms)
+12:47:09 Build Finished. 0 errors, 0 warnings. (took 392ms)
 

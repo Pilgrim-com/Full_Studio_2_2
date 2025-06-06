@@ -2,6 +2,7 @@
 "./Core/Src/ModBusRTU.o"
 "./Core/Src/PID.o"
 "./Core/Src/QEI.o"
+"./Core/Src/Trapezoidal.o"
 "./Core/Src/main.o"
 "./Core/Src/moter.o"
 "./Core/Src/stm32g4xx_hal_msp.o"

@@ -1,0 +1,28 @@
+2025-06-02 13:43:07,714 [INFO] WebApp:194 - Connection lost
+2025-06-02 13:43:29,690 [INFO] WebApp:191 - Connection restablished
+2025-06-02 13:43:31,897 [INFO] WebApp:194 - Connection lost
+2025-06-02 13:43:32,082 [INFO] WebApp:191 - Connection restablished
+2025-06-02 14:35:36,437 [INFO] WebApp:194 - Connection lost
+2025-06-02 14:35:36,664 [INFO] WebApp:191 - Connection restablished
+2025-06-02 14:36:32,424 [INFO] WebApp:194 - Connection lost
+2025-06-02 14:36:32,657 [INFO] WebApp:191 - Connection restablished
+2025-06-02 14:37:18,926 [INFO] WebApp:194 - Connection lost
+2025-06-02 14:37:19,238 [INFO] WebApp:191 - Connection restablished
+2025-06-02 14:37:38,908 [INFO] WebApp:194 - Connection lost
+2025-06-02 14:37:39,089 [INFO] WebApp:191 - Connection restablished
+2025-06-02 14:37:42,428 [INFO] WebApp:194 - Connection lost
+2025-06-02 14:37:42,604 [INFO] WebApp:191 - Connection restablished
+2025-06-02 14:38:33,156 [INFO] McuFinderGlobals:63 - Set McuFinder mode to 2 (CubeIDE integrated)
+2025-06-02 14:38:33,967 [INFO] MainUpdater:2872 - connection check result : 10
+2025-06-02 14:38:34,009 [INFO] McuFinderGlobals:76 - Set McuFinderConnectedMode to true
+2025-06-02 14:38:34,337 [INFO] ServerAccessManage:473 - Download File mcusAds.json._tmp_
+2025-06-02 14:38:34,449 [INFO] LoadUrlFilesThread:156 - End of LoadUrlFiles Thread
+2025-06-02 14:38:36,169 [INFO] ServerAccessManage:473 - Download File cube-finder-db.zip
+2025-06-02 14:38:39,179 [INFO] FileExtend:242 - Unzip File : cube-finder-db.zip
+2025-06-02 14:38:39,180 [INFO] FileExtend:257 - Standard Zip Deflate
+2025-06-02 14:38:39,889 [INFO] LoadUrlFilesThread:156 - End of LoadUrlFiles Thread
+2025-06-02 14:38:40,962 [INFO] ServerAccessManage:473 - Download File crdb.zip
+2025-06-02 14:38:41,757 [ERROR] ServerAccessManage:651 - User Cancel Download : crdb.zip.
+2025-06-02 14:38:41,858 [INFO] LoadUrlFilesThread:156 - End of LoadUrlFiles Thread
+2025-06-02 14:38:42,641 [INFO] DbMcusAds:53 - JSON generation date=Wed May 07 16:07:55 ICT 2025 (1746608875484)
+2025-06-02 14:38:42,678 [ERROR] TargetSelectorAdapter:267 - Unable to refresh data

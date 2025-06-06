@@ -1,0 +1,74 @@
+#ifndef TRAPEZOIDAL_H
+#define TRAPEZOIDAL_H
+
+#include <stdint.h>
+
+typedef struct {
+    float distance_total;   // |goal − start|, i.e. total Δ-distance
+    float v_max;            // maximum cruise velocity
+    float a_max;            // maximum acceleration
+    float current_position; // internal “0 → distance_total” position
+    float current_velocity; // internal velocity
+    float target_position;  // = distance_total
+    float direction;        // +1 or −1
+    uint8_t finished;       // 1 if done, 0 otherwise
+
+    // NEW FIELD: absolute encoder start offset
+    float start_offset;     // actual encoder reading at Init time
+
+    // (Optional) if you want to know triangular vs. trapezoidal:
+    uint8_t is_triangular;
+    float v_peak;
+} VELO_PROFILE;
+
+/**
+ * @brief  Initialize a velocity‐profile that goes from abs_start → abs_goal
+ * @param  profile        pointer to a VELO_PROFILE struct
+ * @param  abs_start      the absolute “start” (e.g. current encoder)
+ * @param  abs_goal       the absolute “target” (e.g. commanded endpoint)
+ * @param  v_max          requested maximum cruise speed (in same units as distance)
+ * @param  a_max          requested maximum acceleration (same units)
+ *
+ * Internally this sets:
+ *   profile->start_offset   = abs_start;
+ *   profile->distance_total = fabsf(abs_goal − abs_start);
+ *   profile->target_position = distance_total;
+ *   profile->direction       = (abs_goal >= abs_start) ? +1 : −1;
+ *   profile->current_position = 0.0f;
+ *   profile->current_velocity = 0.0f;
+ *   profile->finished         = 0;
+ *   …plus triangular/trapezoidal flag, etc.
+ */
+void Trapezoidal_Init(VELO_PROFILE *profile,
+                      float abs_start,
+                      float abs_goal,
+                      float v_max,
+                      float a_max);
+
+/**
+ * @brief  Advance the trapezoidal profile by dt seconds.
+ * @param  profile   pointer to a VELO_PROFILE that was Init’d
+ * @param  dt        time step (in seconds, e.g. 0.001f for 1 ms)
+ *
+ * After each call, profile->current_position has moved by:
+ *      Δposition = current_velocity * dt
+ * subject to acceleration/deceleration logic.
+ * When profile->current_position reaches profile->target_position,
+ * profile->finished is set to 1 and current_velocity → 0.
+ */
+void Trapezoidal_Update(VELO_PROFILE *profile, float dt);
+
+/**
+ * @brief  Return the “absolute” setpoint at any given moment.
+ * @param  profile  pointer to a VELO_PROFILE that was Init’d
+ * @return          (start_offset + current_position)
+ *
+ * In other words, if you called Trapezoidal_Init(&p, 100.0f, 150.0f, …),
+ * then GetCurrentAbsolute(p) goes 100 → 150 as current_position goes 0 → 50.
+ */
+static inline float Trapezoidal_GetCurrentAbsolute(VELO_PROFILE *profile)
+{
+    return profile->start_offset + profile->current_position;
+}
+
+#endif // TRAPEZOIDAL_H
