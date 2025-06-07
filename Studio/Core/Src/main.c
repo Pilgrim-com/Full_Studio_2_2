@@ -48,7 +48,7 @@
 #define RAW_MAX   3400   // you saw ~4080 at the other end
 #define OUT_MIN  -100
 #define OUT_MAX  +100
-
+#define PATH_POINTS  (sizeof(path)/sizeof(path[0]))
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,6 +67,7 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim8;
 TIM_HandleTypeDef htim16;
 
 UART_HandleTypeDef huart2;
@@ -96,7 +97,9 @@ typedef enum {
 	STATE_POINT_MOVING,
 	STATE_GO_TO_TARGET,
 	STATE_STOPPING,
-	STATE_ERROR
+	STATE_ERROR,
+	STATE_RUNING,
+	STATE_PAIN
 } RobotState;
 
 typedef enum {
@@ -110,23 +113,25 @@ float joy_save[10];
 
 MOTOR prismatic_motor;
 MOTOR revolute_motor;
+MOTOR servo_motor;
 
 float target_position_prismatic = 0.0;
 
 // PID_Velocity gain
-float Kp_velo_pris = 150.0;
-float Ki_velo_pris = 2.5;         //8.5;
+float Kp_velo_pris = 100.0;
+float Ki_velo_pris = 2.0;      //8.5;
 float Kd_velo_pris = 0.0;
 float output_velo_pris = 0.00;
 float error_velo_pris = 0.00;
 
 // PID_Position gain
 //float Kp_pos = 4.5; encoder
-float Kp_pos_pris = 5.0;
+float Kp_pos_pris = 6.0;
 float Ki_pos_pris = 0.0;
 float Kd_pos_pris = 0.0;
 float output_pos_pris = 0.00;
 float error_pos_pris = 0.00;
+
 //PID_Position CMSIS
 arm_pid_instance_f32 PID_POS_pris = { 0 };
 arm_pid_instance_f32 PID_POS_re = { 0 };
@@ -175,15 +180,21 @@ float motor_voltage = 0.0;
 float error_rads = 0.0;
 
 // PID_Velocity gain
-float Kp_pos_re = 0.5;
+//float Kp_pos_re = 15.0;
+//float Ki_pos_re = 0.0;         //8.5;
+//float Kd_pos_re = 2.0;
+float Kp_pos_re = 15.0;
 float Ki_pos_re = 0.0;         //8.5;
-float Kd_pos_re = 0.0;
+float Kd_pos_re = 2.0;
 float output_pos_re = 0.00;
 float error_pos_re = 0.00;
 
 //Revolute Velo Control
-float Kp_velo_re = 30000.0;
-float Ki_velo_re = 150.0;         //8.5;
+//float Kp_velo_re = 2500.0;
+//float Ki_velo_re = 15.0;         //8.5;
+//float Kd_velo_re = 0.0;
+float Kp_velo_re = 3000.0;
+float Ki_velo_re = 0.2;         //8.5;
 float Kd_velo_re = 0.0;
 float output_velo_re = 0.00;
 float error_velo_re = 0.00;
@@ -213,6 +224,7 @@ int16_t Joy_y;
 uint8_t Joy_run;
 uint8_t Joy_save;
 int count = 0.0;
+int count_run = 1.0;
 
 //Proximity
 uint16_t Prox_RawRead[10];
@@ -233,6 +245,171 @@ float theta = 0.0;
 
 uint32_t stopCounter = 0;
 uint8_t pointMoveNeedsInit = 0;
+uint8_t running_flang = 0;
+uint8_t pain_flang = 0;
+uint8_t pointRunNeedsInit = 0;
+uint8_t pen_flag = 0;
+
+static uint16_t path_idx = 0;
+static uint8_t painInit = 1;
+uint8_t count_pain = 0;
+float goal_r_mm = 0.0;
+float goal_th_deg = 0.0;
+
+const float path[][2] = { { 180.35, 11.28 }, { 180.29, 18.96 },
+		{ 180.23, 26.65 }, { 180.17, 34.34 }, { 180.11, 42.02 },
+		{ 180.05, 49.71 }, { 179.99, 57.39 }, { 179.93, 65.08 },
+		{ 179.88, 72.76 }, { 179.82, 80.45 }, { 179.76, 88.14 },
+		{ 180.64, 11.57 }, { 177.21, 11.51 }, { 173.77, 11.45 },
+		{ 170.34, 11.39 }, { 166.91, 11.34 }, { 163.48, 11.28 },
+		{ 160.05, 11.22 }, { 156.61, 11.16 }, { 153.18, 11.10 },
+		{ 149.75, 11.04 }, { 146.32, 10.98 }, { 180.35, 33.57 },
+		{ 177.59, 33.60 }, { 174.83, 33.63 }, { 172.07, 33.66 },
+		{ 169.32, 33.69 }, { 166.56, 33.72 }, { 163.80, 33.75 },
+		{ 161.04, 33.78 }, { 158.29, 33.81 }, { 155.53, 33.84 },
+		{ 152.77, 33.87 }, { 140.74, 10.40 }, { 138.60, 10.43 },
+		{ 136.46, 10.46 }, { 134.32, 10.49 }, { 132.18, 10.51 },
+		{ 130.04, 10.54 }, { 127.89, 10.57 }, { 125.75, 10.60 },
+		{ 123.61, 10.63 }, { 121.47, 10.66 }, { 119.33, 10.69 },
+		{ 131.65, 10.10 }, { 131.59, 17.82 }, { 131.53, 25.53 },
+		{ 131.47, 33.25 }, { 131.41, 40.96 }, { 131.36, 48.68 },
+		{ 131.30, 56.40 }, { 131.24, 64.11 }, { 131.18, 71.83 },
+		{ 131.12, 79.54 }, { 131.06, 87.26 }, { 141.04, 88.43 },
+		{ 138.89, 88.34 }, { 136.75, 88.25 }, { 134.61, 88.16 },
+		{ 132.47, 88.08 }, { 130.33, 87.99 }, { 128.19, 87.90 },
+		{ 126.05, 87.81 }, { 123.90, 87.72 }, { 121.76, 87.64 },
+		{ 119.62, 87.55 }, { 101.73, 89.02 }, { 101.73, 81.30 },
+		{ 101.73, 73.59 }, { 101.73, 65.87 }, { 101.73, 58.16 },
+		{ 101.73, 50.44 }, { 101.73, 42.72 }, { 101.73, 35.01 },
+		{ 101.73, 27.29 }, { 101.73, 19.58 }, { 101.73, 11.86 },
+		{ 101.73, 11.86 }, { 99.38, 11.86 }, { 97.03, 11.86 }, { 94.69, 11.86 },
+		{ 92.34, 11.86 }, { 89.99, 11.86 }, { 87.65, 11.86 }, { 85.30, 11.86 },
+		{ 82.95, 11.86 }, { 80.61, 11.86 }, { 78.26, 11.86 }, { 78.26, 11.86 },
+		{ 76.73, 13.30 }, { 75.21, 14.74 }, { 73.68, 16.18 }, { 72.16, 17.61 },
+		{ 70.63, 19.05 }, { 69.11, 20.49 }, { 67.58, 21.93 }, { 66.06, 23.36 },
+		{ 64.53, 24.80 }, { 63.00, 26.24 }, { 63.00, 26.24 }, { 64.33, 27.88 },
+		{ 65.65, 29.52 }, { 66.97, 31.17 }, { 68.29, 32.81 }, { 69.61, 34.45 },
+		{ 70.93, 36.10 }, { 72.25, 37.74 }, { 73.57, 39.38 }, { 74.89, 41.02 },
+		{ 76.21, 42.67 }, { 76.21, 42.67 }, { 78.73, 42.70 }, { 81.25, 42.72 },
+		{ 83.77, 42.75 }, { 86.30, 42.78 }, { 88.82, 42.81 }, { 91.34, 42.84 },
+		{ 93.87, 42.87 }, { 96.39, 42.90 }, { 98.91, 42.93 }, { 101.43, 42.96 },
+		{ 76.21, 42.67 }, { 74.89, 44.13 }, { 73.57, 45.60 }, { 72.25, 47.07 },
+		{ 70.93, 48.53 }, { 69.61, 50.00 }, { 68.29, 51.47 }, { 66.97, 52.93 },
+		{ 65.65, 54.40 }, { 64.33, 55.87 }, { 63.00, 57.33 }, { 63.00, 57.33 },
+		{ 63.03, 59.39 }, { 63.06, 61.44 }, { 63.09, 63.49 }, { 63.12, 65.55 },
+		{ 63.15, 67.60 }, { 63.18, 69.65 }, { 63.21, 71.71 }, { 63.24, 73.76 },
+		{ 63.27, 75.81 }, { 63.30, 77.87 }, { 63.30, 77.87 }, { 64.47, 79.07 },
+		{ 65.65, 80.27 }, { 66.82, 81.48 }, { 67.99, 82.68 }, { 69.17, 83.88 },
+		{ 70.34, 85.08 }, { 71.51, 86.29 }, { 72.69, 87.49 }, { 73.86, 88.69 },
+		{ 75.03, 89.90 }, { 75.03, 89.90 }, { 77.79, 89.75 }, { 80.55, 89.60 },
+		{ 83.30, 89.46 }, { 86.06, 89.31 }, { 88.82, 89.16 }, { 91.58, 89.02 },
+		{ 94.33, 88.87 }, { 97.09, 88.72 }, { 99.85, 88.58 }, { 102.61, 88.43 },
+		{ -4.17, 84.91 }, { -8.04, 84.85 }, { -11.92, 84.79 },
+		{ -15.79, 84.73 }, { -19.66, 84.67 }, { -23.53, 84.62 },
+		{ -27.41, 84.56 }, { -31.28, 84.50 }, { -35.15, 84.44 },
+		{ -39.02, 84.38 }, { -42.89, 84.32 }, { -75.75, 50.59 },
+		{ -79.09, 50.53 }, { -82.44, 50.47 }, { -85.78, 50.41 },
+		{ -89.13, 50.35 }, { -92.47, 50.29 }, { -95.82, 50.23 },
+		{ -99.16, 50.18 }, { -102.50, 50.12 }, { -105.85, 50.06 }, { -109.19,
+				50.00 }, { -109.19, 50.00 }, { -109.16, 52.08 }, { -109.13,
+				54.17 }, { -109.10, 56.25 }, { -109.07, 58.33 }, { -109.05,
+				60.41 }, { -109.02, 62.50 }, { -108.99, 64.58 }, { -108.96,
+				66.66 }, { -108.93, 68.75 }, { -108.90, 70.83 }, { -108.90,
+				70.83 }, { -107.75, 72.21 }, { -106.61, 73.59 }, { -105.47,
+				74.96 }, { -104.32, 76.34 }, { -103.18, 77.72 }, { -102.03,
+				79.10 }, { -100.89, 80.48 }, { -99.75, 81.86 },
+		{ -98.60, 83.24 }, { -97.46, 84.62 }, { -97.46, 84.62 },
+		{ -94.82, 84.62 }, { -92.18, 84.62 }, { -89.54, 84.62 },
+		{ -86.90, 84.62 }, { -84.26, 84.62 }, { -81.62, 84.62 },
+		{ -78.98, 84.62 }, { -76.34, 84.62 }, { -73.70, 84.62 },
+		{ -71.06, 84.62 }, { -71.06, 84.62 }, { -69.21, 83.12 },
+		{ -67.36, 81.62 }, { -65.51, 80.13 }, { -63.66, 78.63 },
+		{ -61.82, 77.13 }, { -59.97, 75.64 }, { -58.12, 74.14 },
+		{ -56.27, 72.65 }, { -54.42, 71.15 }, { -52.58, 69.65 },
+		{ -52.58, 69.65 }, { -52.55, 66.05 }, { -52.52, 62.44 },
+		{ -52.49, 58.83 }, { -52.46, 55.22 }, { -52.43, 51.61 },
+		{ -52.40, 48.01 }, { -52.37, 44.40 }, { -52.34, 40.79 },
+		{ -52.31, 37.18 }, { -52.28, 33.57 }, { -52.28, 33.57 },
+		{ -53.57, 31.40 }, { -54.86, 29.23 }, { -56.15, 27.06 },
+		{ -57.45, 24.89 }, { -58.74, 22.72 }, { -60.03, 20.55 },
+		{ -61.32, 18.38 }, { -62.61, 16.21 }, { -63.90, 14.04 },
+		{ -65.19, 11.86 }, { -65.19, 11.86 }, { -68.18, 11.86 },
+		{ -71.17, 11.86 }, { -74.17, 11.86 }, { -77.16, 11.86 },
+		{ -80.15, 11.86 }, { -83.14, 11.86 }, { -86.13, 11.86 },
+		{ -89.13, 11.86 }, { -92.12, 11.86 }, { -95.11, 11.86 },
+		{ -95.11, 11.86 }, { -96.43, 12.92 }, { -97.75, 13.98 },
+		{ -99.07, 15.03 }, { -100.39, 16.09 }, { -101.71, 17.14 }, { -103.03,
+				18.20 }, { -104.35, 19.26 }, { -105.67, 20.31 }, { -106.99,
+				21.37 }, { -108.31, 22.42 }, { -174.61, 11.86 }, { -177.34,
+				11.92 }, { -180.07, 11.98 }, { -182.79, 12.04 }, { -185.52,
+				12.10 }, { -188.25, 12.16 }, { -190.98, 12.22 }, { -193.71,
+				12.28 }, { -196.43, 12.33 }, { -199.16, 12.39 }, { -201.89,
+				12.45 }, { -201.89, 12.45 }, { -203.68, 13.89 }, { -205.47,
+				15.33 }, { -207.26, 16.76 }, { -209.05, 18.20 }, { -210.84,
+				19.64 }, { -212.63, 21.08 }, { -214.42, 22.51 }, { -216.21,
+				23.95 }, { -218.00, 25.39 }, { -219.79, 26.83 }, { -219.79,
+				26.83 }, { -217.88, 28.70 }, { -215.97, 30.58 }, { -214.07,
+				32.46 }, { -212.16, 34.34 }, { -210.25, 36.21 }, { -208.34,
+				38.09 }, { -206.44, 39.97 }, { -204.53, 41.84 }, { -202.62,
+				43.72 }, { -200.72, 45.60 }, { -200.72, 45.60 }, { -198.58,
+				45.63 }, { -196.43, 45.66 }, { -194.29, 45.69 }, { -192.15,
+				45.72 }, { -190.01, 45.75 }, { -187.87, 45.78 }, { -185.73,
+				45.81 }, { -183.59, 45.83 }, { -181.44, 45.86 }, { -179.30,
+				45.89 }, { -199.84, 45.89 }, { -201.51, 46.92 }, { -203.18,
+				47.95 }, { -204.85, 48.97 }, { -206.53, 50.00 }, { -208.20,
+				51.03 }, { -209.87, 52.05 }, { -211.54, 53.08 }, { -213.21,
+				54.11 }, { -214.89, 55.13 }, { -216.56, 56.16 }, { -216.56,
+				56.16 }, { -216.53, 57.80 }, { -216.50, 59.45 }, { -216.47,
+				61.09 }, { -216.44, 62.73 }, { -216.41, 64.37 }, { -216.38,
+				66.02 }, { -216.35, 67.66 }, { -216.32, 69.30 }, { -216.29,
+				70.95 }, { -216.27, 72.59 }, { -216.27, 72.59 }, { -214.65,
+				73.41 }, { -213.04, 74.23 }, { -211.43, 75.05 }, { -209.81,
+				75.87 }, { -208.20, 76.69 }, { -206.58, 77.52 }, { -204.97,
+				78.34 }, { -203.36, 79.16 }, { -201.74, 79.98 }, { -200.13,
+				80.80 }, { -200.13, 80.80 }, { -197.75, 80.74 }, { -195.38,
+				80.68 }, { -193.00, 80.63 }, { -190.63, 80.57 }, { -188.25,
+				80.51 }, { -185.87, 80.45 }, { -183.50, 80.39 }, { -181.12,
+				80.33 }, { -178.75, 80.27 }, { -176.37, 80.22 },
+		{ 32.50, 13.04 }, { 34.17, 14.88 }, { 35.84, 16.73 }, { 37.52, 18.58 },
+		{ 39.19, 20.43 }, { 40.86, 22.28 }, { 42.53, 24.12 }, { 44.20, 25.97 },
+		{ 45.88, 27.82 }, { 47.55, 29.67 }, { 49.22, 31.52 }, { 49.22, 31.52 },
+		{ 49.31, 35.04 }, { 49.40, 38.56 }, { 49.48, 42.08 }, { 49.57, 45.60 },
+		{ 49.66, 49.12 }, { 49.75, 52.64 }, { 49.84, 56.16 }, { 49.92, 59.68 },
+		{ 50.01, 63.20 }, { 50.10, 66.72 }, { 50.10, 66.72 }, { 48.58, 68.68 },
+		{ 47.05, 70.65 }, { 45.52, 72.62 }, { 44.00, 74.58 }, { 42.47, 76.55 },
+		{ 40.95, 78.51 }, { 39.42, 80.48 }, { 37.90, 82.44 }, { 36.37, 84.41 },
+		{ 34.85, 86.37 }, { 34.85, 86.37 }, { 33.23, 84.79 }, { 31.62, 83.21 },
+		{ 30.01, 81.62 }, { 28.39, 80.04 }, { 26.78, 78.45 }, { 25.17, 76.87 },
+		{ 23.55, 75.29 }, { 21.94, 73.70 }, { 20.33, 72.12 }, { 18.71, 70.53 },
+		{ 18.71, 70.53 }, { 18.65, 66.54 }, { 18.60, 62.55 }, { 18.54, 58.56 },
+		{ 18.48, 54.57 }, { 18.42, 50.59 }, { 18.36, 46.60 }, { 18.30, 42.61 },
+		{ 18.24, 38.62 }, { 18.18, 34.63 }, { 18.13, 30.64 }, { 18.13, 30.64 },
+		{ 19.56, 28.88 }, { 21.00, 27.12 }, { 22.44, 25.36 }, { 23.88, 23.60 },
+		{ 25.31, 21.84 }, { 26.75, 20.08 }, { 28.19, 18.32 }, { 29.63, 16.56 },
+		{ 31.06, 14.80 }, { 32.50, 13.04 }, { -160.82, 24.18 },
+		{ -160.85, 29.76 }, { -160.88, 35.33 }, { -160.91, 40.90 }, { -160.94,
+				46.48 }, { -160.97, 52.05 }, { -160.99, 57.63 }, { -161.02,
+				63.20 }, { -161.05, 68.77 }, { -161.08, 74.35 }, { -161.11,
+				79.92 }, { -161.11, 79.92 }, { -159.18, 80.74 }, { -157.24,
+				81.56 }, { -155.30, 82.38 }, { -153.37, 83.21 }, { -151.43,
+				84.03 }, { -149.50, 84.85 }, { -147.56, 85.67 }, { -145.62,
+				86.49 }, { -143.69, 87.31 }, { -141.75, 88.13 }, { -141.75,
+				88.13 }, { -139.67, 86.43 }, { -137.59, 84.73 }, { -135.50,
+				83.03 }, { -133.42, 81.33 }, { -131.34, 79.63 }, { -129.25,
+				77.93 }, { -127.17, 76.22 }, { -125.09, 74.52 }, { -123.01,
+				72.82 }, { -120.92, 71.12 }, { -120.92, 71.12 }, { -120.92,
+				66.51 }, { -120.92, 61.91 }, { -120.92, 57.30 }, { -120.92,
+				52.70 }, { -120.92, 48.09 }, { -120.92, 43.49 }, { -120.92,
+				38.88 }, { -120.92, 34.27 }, { -120.92, 29.67 }, { -120.92,
+				25.06 }, { -120.92, 25.06 }, { -122.80, 23.74 }, { -124.68,
+				22.42 }, { -126.56, 21.10 }, { -128.43, 19.78 }, { -130.31,
+				18.46 }, { -132.19, 17.14 }, { -134.06, 15.82 }, { -135.94,
+				14.50 }, { -137.82, 13.18 }, { -139.70, 11.86 }, { -139.70,
+				11.86 }, { -141.81, 13.09 }, { -143.92, 14.33 }, { -146.03,
+				15.56 }, { -148.15, 16.79 }, { -150.26, 18.02 }, { -152.37,
+				19.26 }, { -154.48, 20.49 }, { -156.59, 21.72 }, { -158.71,
+				22.95 }, { -160.82, 24.18 }, };
+uint8_t button_run_prev = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -248,6 +425,7 @@ static void MX_ADC1_Init(void);
 static void MX_TIM16_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC2_Init(void);
+static void MX_TIM8_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -295,12 +473,13 @@ int main(void) {
 	MX_TIM16_Init();
 	MX_USART2_UART_Init();
 	MX_ADC2_Init();
+	MX_TIM8_Init();
 	/* USER CODE BEGIN 2 */
 	hmodbus.huart = &huart2;
 	hmodbus.htim = &htim16;
 	hmodbus.slaveAddress = 0x15;
 	hmodbus.RegisterSize = 70;
-	Modbus_init(&hmodbus, registerFrame);
+	Modbus_init(&hmodbus, &registerFrame);
 
 	PID_POS_pris.Kp = Kp_pos_pris;
 	PID_POS_pris.Ki = Ki_pos_pris;
@@ -314,8 +493,8 @@ int main(void) {
 
 	MotorInit(&prismatic_motor, &htim1, TIM_CHANNEL_3, GPIOC, GPIO_PIN_7);
 	MotorInit(&revolute_motor, &htim1, TIM_CHANNEL_2, GPIOC, GPIO_PIN_6);
-	HAL_TIM_Base_Start(&htim1);
-	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+	HAL_TIM_Base_Start(&htim8);
+	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
 
 	QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
 	QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
@@ -328,6 +507,9 @@ int main(void) {
 
 	HAL_ADC_Start_DMA(&hadc1, JOY_RawRead, 20);
 	HAL_ADC_Start_DMA(&hadc2, Prox_RawRead, 10);
+
+//	MotorInit(&revolute_motor, &htim1, TIM_CHANNEL_1, GPIOB, GPIO_PIN_0);
+
 //	registerFrame[4].U16 = 1;
 //	registerFrame[5].U16 = 0;
 	/* USER CODE END 2 */
@@ -564,10 +746,6 @@ static void MX_TIM1_Init(void) {
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
 	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
 	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
-	if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1)
-			!= HAL_OK) {
-		Error_Handler();
-	}
 	if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2)
 			!= HAL_OK) {
 		Error_Handler();
@@ -779,6 +957,84 @@ static void MX_TIM5_Init(void) {
 }
 
 /**
+ * @brief TIM8 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM8_Init(void) {
+
+	/* USER CODE BEGIN TIM8_Init 0 */
+
+	/* USER CODE END TIM8_Init 0 */
+
+	TIM_ClockConfigTypeDef sClockSourceConfig = { 0 };
+	TIM_MasterConfigTypeDef sMasterConfig = { 0 };
+	TIM_OC_InitTypeDef sConfigOC = { 0 };
+	TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = { 0 };
+
+	/* USER CODE BEGIN TIM8_Init 1 */
+
+	/* USER CODE END TIM8_Init 1 */
+	htim8.Instance = TIM8;
+	htim8.Init.Prescaler = 169;
+	htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim8.Init.Period = 19999;
+	htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim8.Init.RepetitionCounter = 0;
+	htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_Base_Init(&htim8) != HAL_OK) {
+		Error_Handler();
+	}
+	sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+	if (HAL_TIM_ConfigClockSource(&htim8, &sClockSourceConfig) != HAL_OK) {
+		Error_Handler();
+	}
+	if (HAL_TIM_PWM_Init(&htim8) != HAL_OK) {
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim8, &sMasterConfig)
+			!= HAL_OK) {
+		Error_Handler();
+	}
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+	if (HAL_TIM_PWM_ConfigChannel(&htim8, &sConfigOC, TIM_CHANNEL_1)
+			!= HAL_OK) {
+		Error_Handler();
+	}
+	sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+	sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+	sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+	sBreakDeadTimeConfig.DeadTime = 0;
+	sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+	sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+	sBreakDeadTimeConfig.BreakFilter = 0;
+	sBreakDeadTimeConfig.BreakAFMode = TIM_BREAK_AFMODE_INPUT;
+	sBreakDeadTimeConfig.Break2State = TIM_BREAK2_DISABLE;
+	sBreakDeadTimeConfig.Break2Polarity = TIM_BREAK2POLARITY_HIGH;
+	sBreakDeadTimeConfig.Break2Filter = 0;
+	sBreakDeadTimeConfig.Break2AFMode = TIM_BREAK_AFMODE_INPUT;
+	sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+	if (HAL_TIMEx_ConfigBreakDeadTime(&htim8, &sBreakDeadTimeConfig)
+			!= HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM8_Init 2 */
+
+	/* USER CODE END TIM8_Init 2 */
+	HAL_TIM_MspPostInit(&htim8);
+
+}
+
+/**
  * @brief TIM16 Initialization Function
  * @param None
  * @retval None
@@ -826,7 +1082,7 @@ static void MX_USART2_UART_Init(void) {
 
 	/* USER CODE END USART2_Init 1 */
 	huart2.Instance = USART2;
-	huart2.Init.BaudRate = 19200;
+	huart2.Init.BaudRate = 115200;
 	huart2.Init.WordLength = UART_WORDLENGTH_9B;
 	huart2.Init.StopBits = UART_STOPBITS_1;
 	huart2.Init.Parity = UART_PARITY_EVEN;
@@ -975,16 +1231,15 @@ static void MX_GPIO_Init(void) {
 
 /* USER CODE BEGIN 4 */
 void Prismatic_CasCadeControl() {
-//	error_pos_pris = target_position_prismatic - ball_screw_pos;
+	float setpoint_pris_abs = Trapezoidal_GetCurrentAbsolute(&prisProfile);
 
-	error_pos_pris = prisProfile.current_position - ball_screw_pos;
-
+	error_pos_pris = setpoint_pris_abs - (float) ball_screw_pos;
 	output_pos_pris = arm_pid_f32(&PID_POS_pris, error_pos_pris);
 
-	if (output_pos_pris > 600) {
-		output_pos_pris = 600;
-	} else if (output_pos_pris < -600) {
-		output_pos_pris = -600;
+	if (output_pos_pris > 550) {
+		output_pos_pris = 550;
+	} else if (output_pos_pris < -550) {
+		output_pos_pris = -550;
 	}
 
 	error_velo_pris = output_pos_pris - ball_screw_vel;
@@ -997,21 +1252,17 @@ void Prismatic_CasCadeControl() {
 		output_prismatic = 0;
 	}
 
-	// Motor control
-	if (ball_screw_pos >= target_position_prismatic - 0.05
-			&& ball_screw_pos <= target_position_prismatic + 0.05) {
+	// Motor control}
+	if (error_pos_pris <= 0.1 && error_pos_pris >= -0.1) {
 		output_prismatic = 0;
 	} else {
-		output_prismatic = output_pos_pris;
+		output_prismatic = output_velo_pris;
 	}
-	output_prismatic = output_velo_pris;
 }
 
 void Revolute_CasCadeControl() {
-//	error_pos_re = target_position_revolute - revolute_encoder.rads;
-
-	error_pos_re = revProfile.current_position - revolute_encoder.rads;
-
+	float setpoint_rev_abs = Trapezoidal_GetCurrentAbsolute(&revProfile);
+	error_pos_re = setpoint_rev_abs - revolute_encoder.rads;
 	output_pos_re = arm_pid_f32(&PID_POS_re, error_pos_re);
 
 	if (output_pos_re > 300) {
@@ -1020,7 +1271,7 @@ void Revolute_CasCadeControl() {
 		output_pos_re = -300;
 	}
 
-	error_velo_re = error_pos_re - (revolute_encoder.radps / 2);
+	error_velo_re = output_pos_re - (revolute_encoder.radps / 2);
 
 	output_velo_re = PIDCompute(&revolute_vel_control, Kp_velo_re, Ki_velo_re,
 			Kd_velo_re, error_velo_re);
@@ -1031,13 +1282,11 @@ void Revolute_CasCadeControl() {
 		output_revolute = 0;
 	}
 	// Motor control
-//	if (revolute_encoder.rads >= target_position_revolute - 0.1
-//			&& revolute_encoder.rads <= target_position_revolute + 0.1) {
-//		output_revolute = 0;
-//	} else {
-//		output_revolute = output_velo_re;;
-//	}
-	output_revolute = output_velo_re;
+	if (error_pos_re <= 0.15 && error_pos_re >= -0.15) {
+		output_revolute = 0;
+	} else {
+		output_revolute = output_velo_re;
+	}
 }
 
 void ball_screw_converter() {
@@ -1141,18 +1390,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		} else if (Prox_RawRead[0] < 1500) {
 			revolute_flag = 1;
 		}
+
 		//Servo
 		if (registerFrame[4].U16 == 1) {
-//			registerFrame[5].U16 = (registerFrame[4].U16 == 1) ? 0 : 1;
-			__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 65535 / 3.5);
+			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, 1600);
 		} else if (registerFrame[5].U16 == 1) {
-//			registerFrame[4].U16 = (registerFrame[4].U16 == 1) ? 0 : 1;
-			__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+			__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, 2200);
 		}
+//		__HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_1, motor_voltage);
+		//button
 		Joy_save = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13);
 		Joy_run = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_14);
-
-		//button
 		button_emer =
 				(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) ? 1 : 0;
 
@@ -1171,21 +1419,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		// Heart beat protocal 0.5 sec
 		if (heartbeat_counter > 500) {
 			heartbeat_counter = 0;
-			registerFrame[0].U16 = (registerFrame[0].U16 == 0) ? 22881 : 0;
+			registerFrame[0x00].U16 =
+					(registerFrame[0X00].U16 == 0) ? 22881 : 0;
 		}
 		heartbeat_counter++;
 	}
-
 	// state timer 1000 hz
 	if (htim == &htim5) {
 		// ตรวจสอบคำสั่งหยุดฉุกเฉิน (มีความสำคัญสูงสุด)
 		if (registerFrame[1].U16 & STATUS_STOP) {
 			current_state = STATE_STOPPING;
 		}
-
-		if (registerFrame[1].U16 & STATUS_HOME) {
+		if ((registerFrame[1].U16 & STATUS_HOME) && pain_flang == 0) {
 			current_state = STATE_HOMING;
-		} else if (registerFrame[1].U16 & STATUS_JOG) {
+		} else if ((registerFrame[1].U16 & STATUS_JOG) && running_flang == 0) {
 			current_state = STATE_JOGGING;
 			registerFrame[10].U16 = STATUS_JOG;
 		} else if (registerFrame[1].U16 & STATUS_POINT) {
@@ -1198,50 +1445,136 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		} else if (registerFrame[1].U16 & STATUS_IDLE) {
 			current_state = STATE_IDLE;
 		}
-//
-//		if (registerFrame[4].U16 == 1 && registerFrame[5].U16 == 0) {
-//			//Pen Up Servo On
-//			registerFrame[3].U16 = 1 << 0;
-//		} else {
-//			//Pen Doen Servo Off
-//			registerFrame[3].U16 = 1 << 1;
-//		}
+		if (registerFrame[4].U16 == 1 && registerFrame[5].U16 == 0) {
+			//Pen Up Servo On
+			registerFrame[3].U16 = 1 << 0;
+		} else {
+			//Pen Doen Servo Off
+			registerFrame[3].U16 = 1 << 1;
+		}
 
-		if (button_run == 1
-				&& (current_state == STATE_ERROR || current_state == 0)
+		if (button_reset == 1
+				&& (current_state == STATE_ERROR || current_state == STATE_IDLE)
 				&& button_emer == 1) {
 			registerFrame[1].U16 = STATUS_HOME;
 		}
 
 		switch (current_state) {
 		case STATE_HOMING:
-			if (limit_r != 1) {
-				output_prismatic = -(65535 / 2.0);
-			} else if (limit_r == 1) {
-				limit_l_prev = 1;
-				output_prismatic = 0;
-				QEI_Reset(&prismatic_encoder);
-				QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
-			}
-			if (revolute_flag != 1) {
-				output_revolute = -60000;
-			} else if (revolute_flag == 1) {
-				revolute_homed = 1; // Check Proximity trick
-				output_revolute = 0;
-				QEI_Reset(&revolute_encoder);
-				QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
-			}
-			target_position_prismatic = 0;
-			target_position_revolute = 0;
-			error_pos_re = 0;
-			error_pos_pris = 0;
-			registerFrame[4].U16 = 1;
-			registerFrame[5].U16 = 0;
-			registerFrame[10].U16 = STATUS_HOME;
-			break;
 
+			if (pen_flag == 0) {
+				pen_flag = 1;
+				count_run = 0;
+			}
+
+			if (count_run <= 1500) {
+				output_prismatic = 0;
+				output_revolute = 0;
+				registerFrame[4].U16 = 1;
+				registerFrame[5].U16 = 0;
+
+				count_run++;
+			} else {
+				if (limit_r != 1) {
+					output_prismatic = -(65535 / 2.0);
+				} else if (limit_r == 1) {
+					limit_l_prev = 1;
+					output_prismatic = 0;
+					QEI_Reset(&prismatic_encoder);
+					QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
+				}
+				if (revolute_flag != 1) {
+					output_revolute = -60000;
+				} else if (revolute_flag == 1) {
+					revolute_homed = 1; // Check Proximity trick
+					output_revolute = 0;
+					QEI_Reset(&revolute_encoder);
+					QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
+				}
+				target_position_prismatic = 0;
+				target_position_revolute = 0;
+				error_pos_re = 0;
+				error_pos_pris = 0;
+				registerFrame[10].U16 = STATUS_HOME;
+				if (button_run == 1) {
+					current_state = STATE_PAIN;
+					pain_flang = 1;
+				}
+			}
+			break;
+		case STATE_PAIN:
+			// ถ้าวิ่งจนครบทุกจุด ให้ข้ามไปโฮมมิ่ง
+			if (path_idx >= PATH_POINTS) {
+				registerFrame[4].U16 = 1;
+				registerFrame[5].U16 = 0;
+				pain_flang = 0;
+				current_state = STATE_HOMING;
+				break;
+			}
+
+			if (painInit) {
+				float x_mm = path[path_idx][0];
+				float y_mm = path[path_idx][1];
+
+				if (x_mm == -1 && y_mm == -1) {
+					path_idx++;
+				} else {
+					registerFrame[4].U16 = 0;
+					registerFrame[5].U16 = 1;
+				}
+
+				theta = atan2(y_mm, x_mm);
+				if (theta < 0.0f)
+					theta += 2.0f * M_PI;
+
+				theta *= 2.0;
+
+				if (theta <= 2.0 * M_PI) {
+					target_position_revolute = theta;
+					target_position_prismatic = 300
+							+ (sqrt((x_mm * x_mm) + (y_mm * y_mm)));
+				} else if (theta > 2.0 * M_PI) {
+					target_position_revolute = (float) (fabs(M_PI - theta));
+					target_position_prismatic = mapf(
+							sqrt((x_mm * x_mm) + (y_mm * y_mm)), -300, 0, 300,
+							600);
+				}
+
+				Trapezoidal_Init(&prisProfile, (float) ball_screw_pos,
+						target_position_prismatic, 550.0f, 250.0f);
+				Trapezoidal_Init(&revProfile, revolute_encoder.rads,
+						target_position_revolute, 2.0f, 0.4f);
+
+				painInit = 0;
+			}
+
+			if (!prisProfile.finished)
+				Trapezoidal_Update(&prisProfile, dt);
+			if (!revProfile.finished)
+				Trapezoidal_Update(&revProfile, dt);
+			Prismatic_CasCadeControl();
+			Revolute_CasCadeControl();
+
+			if ((limit_r && output_prismatic < 0)
+					|| (limit_l && output_prismatic > 0))
+				output_prismatic = 0;
+			if ((revolute_flag && output_revolute < 0)
+					|| (revolute_encoder.rads >= 2.0f * M_PI
+							&& output_revolute > 0))
+				output_revolute = 0;
+
+			if (prisProfile.finished && revProfile.finished
+					&& output_prismatic == 0 && output_revolute == 0) {
+//				registerFrame[4].U16 = 0;
+//				registerFrame[5].U16 = 1;
+				path_idx++;
+				painInit = 1;
+			}
+			break;
 		case STATE_JOGGING:
 			//Call joystick mode
+			registerFrame[4].U16 = 1;
+			registerFrame[5].U16 = 0;
 			joy_flag = 1;
 
 			if (limit_r == 1) {
@@ -1273,22 +1606,91 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 				output_revolute = 0;
 			}
 
-			if (button_reset == 1 && button_reset_prev == 0) {
+			if (button_reset == 1) {
+				count_run = 1;
+				current_state = STATE_RUNING;
+				pointRunNeedsInit = 1;
+				running_flang = 1;
+			}
+
+			if (button_run == 1 && button_reset_prev == 0) {
 				count++;
 				if (count > 0 && count <= 10) {
 					registerFrame[18 + count * 2].U16 = ball_screw_pos * 10;
 					registerFrame[19 + count * 2].U16 = (revolute_encoder.rads
 							/ (2 * M_PI)) * 1800.0;
 				} else {
-					count = 0;
+					count = 1;
 				}
 			}
+
+			pen_flag = 0;
+			break;
+		case STATE_RUNING:
+			if (pointRunNeedsInit == 1) {
+				// ต้องจ่ายค่ารอบเดียว
+				target_position_revolute = (float) (registerFrame[19
+						+ count_run * 2].U16 / 1800.0) * (2.0 * M_PI);
+				target_position_prismatic =
+						(registerFrame[18 + count_run * 2].U16 / 10);
+
+				float abs_start_pris = (float) ball_screw_pos;
+				float abs_goal_pris = target_position_prismatic;  // (mm)
+
+				Trapezoidal_Init(&prisProfile, abs_start_pris, abs_goal_pris,
+						550.0f, // v_max (mm/s)
+						250.0f); // a_max (mm/s²)
+
+				float abs_start_rev = (float) revolute_encoder.rads;
+				float abs_goal_rev = target_position_revolute/* from registerFrame[65], converted to radians */;
+
+				Trapezoidal_Init(&revProfile, abs_start_rev, abs_goal_rev, 2.0f, // v_max (rad/s)
+						0.4f); // a_max (rad/s²)
+				pointRunNeedsInit = 0;
+			}
+
+			if (!prisProfile.finished) {
+				Trapezoidal_Update(&prisProfile, 0.001f);
+			}
+			if (!revProfile.finished) {
+				Trapezoidal_Update(&revProfile, 0.001f);
+			}
+
+			Revolute_CasCadeControl();
+			Prismatic_CasCadeControl();
+
+			if (limit_r == 1 && limit_l_prev == 0) {
+				output_prismatic = 0;
+				QEI_Reset(&prismatic_encoder);
+				QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
+			}
+
+			if (revolute_flag == 1 && revolute_homed == 0) {
+				output_revolute = 0;
+				QEI_Reset(&revolute_encoder);
+				QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
+			}
+
+		    if (button_reset && !button_run_prev) {
+		      count_run++;
+		    }
+
+			if (output_prismatic == 0 && output_revolute == 0
+					&& prisProfile.finished && revProfile.finished) {
+				pointRunNeedsInit = 1;
+				registerFrame[4].U16 = 0;
+				registerFrame[5].U16 = 1;
+			}
+			if (button_run == 1){
+				running_flang = 0;
+				current_state = STATE_JOGGING;
+			}
+			pen_flag = 0;
 			break;
 		case STATE_POINT_MOVING:
 			registerFrame[4].U16 = 1;
 			registerFrame[5].U16 = 0;
 			theta = (float) (registerFrame[65].U16);
-//			target_position_prismatic = registerFrame[64].U16 / 10;
 			if (theta <= 1800) {
 				target_position_revolute = (float) (registerFrame[65].U16
 						/ 1800.0) * (2.0 * M_PI);
@@ -1300,21 +1702,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 						/ 180.0) * (2.0 * M_PI);
 				target_position_prismatic = mapf((registerFrame[64].U16 / 10),
 						0, 300, 300, 600);
-//				target_position_revolute = 300 + (registerFrame[64].U16 / 10);
 			}
 
 			if (pointMoveNeedsInit) {
-				float dist_pris = target_position_prismatic
-						- (float) ball_screw_pos;
-				float dist_rev = target_position_revolute
-						- (float) revolute_encoder.rads;
+				float abs_start_pris = (float) ball_screw_pos;
+				float abs_goal_pris = target_position_prismatic;
 
-				// Choose v_max, a_max to suit your system:
-				Trapezoidal_Init(&prisProfile, dist_pris, 550.0f, 250.0f);
-				Trapezoidal_Init(&revProfile, dist_rev, 2.0f, 0.4f);
+				Trapezoidal_Init(&prisProfile, abs_start_pris, abs_goal_pris,
+						550.0f, 250.0f);
 
-				pointMoveNeedsInit = 0; // Clear so we don’t re‐Init on the next tick
+				float abs_start_rev = (float) revolute_encoder.rads;
+				float abs_goal_rev = target_position_revolute;
+
+				Trapezoidal_Init(&revProfile, abs_start_rev, abs_goal_rev, 2.0f, // v_max (rad/s)
+						0.4f); // a_max (rad/s²)
+
+				pointMoveNeedsInit = 0;
 			}
+			pen_flag = 0;
 			break;
 		case STATE_GO_TO_TARGET:
 
@@ -1348,26 +1753,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			registerFrame[15].U16 = (int) (prismatic_acceleration_lowpass * 10);
 			registerFrame[16].U16 = (int) (((revolute_radps_lowpass
 					- prev_revolute_vel) / 0.001) * 10);
-//			if ((error_pos_pris <=  0.05f && error_pos_pris >= -0.05f) &&
-//			        (error_pos_re   <=  0.01f && error_pos_re   >= -0.01f))
-//			    {
-//			        // Both errors are “small enough” right now:
-//			        stopCounter++;
-//
-//			        if (stopCounter >= 3000) {
-//			            // We have remained “inside deadband” for at least 3000 timer ticks:
-//			            registerFrame[1].U16 = STATUS_STOP;
-//			        }
-//			    }
-//			else {
-//				// At least one error is outside its deadband → reset counter:
-//				stopCounter = 0;
-//			}
-			if (prisProfile.finished && revProfile.finished) {
+
+			if (output_prismatic == 0 && output_revolute == 0
+					&& prisProfile.finished && revProfile.finished) {
 				registerFrame[1].U16 = STATUS_STOP;
 			}
-
+			pen_flag = 0;
 			break;
+
 		case STATE_STOPPING:
 			registerFrame[10].U16 = STATUS_STOP;
 			revolute_homed = 0;
@@ -1376,6 +1769,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			output_prismatic = 0;
 			registerFrame[4].U16 = 0;
 			registerFrame[5].U16 = 1;
+			pen_flag = 0;
 			break;
 
 		case STATE_ERROR:
@@ -1384,24 +1778,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			output_prismatic = 0;
 			registerFrame[4].U16 = 0;
 			registerFrame[5].U16 = 1;
+			pen_flag = 0;
+			pain_flang = 0;
 			break;
 		}
-		button_reset_prev = button_reset;
+		button_reset_prev = button_run;
+		button_run_prev = button_reset;
 	}
 }
-
-//void targer_remap(double degree , double pos)
-//{
-//	if (degree < 180)
-//	{
-//		target_position_prismatic = 300 - pos;
-//	}
-//	else
-//	{
-//		target_position_revolute = abs(180 - degree);
-//		target_position_prismatic = mapf(pos, 0, 300, 300, 600);
-//	}
-//}
 /* USER CODE END 4 */
 
 /**

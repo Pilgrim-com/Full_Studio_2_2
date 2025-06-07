@@ -22,3 +22,4 @@ prismatic_encoder.rads
 limit_l_prev
 registerFrame[4].U16
 registerFrame[5].U16
+registerFrame[0].U16

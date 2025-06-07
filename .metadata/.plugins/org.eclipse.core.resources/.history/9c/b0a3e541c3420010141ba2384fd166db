@@ -1,0 +1,95 @@
+#include "Trapezoidal.h"
+#include <math.h>
+
+/*
+ * We assume VELO_PROFILE was zero‐initialized (or at least,
+ * start_offset/current_position/current_velocity are valid floats).
+ * The user must supply abs_start and abs_goal when initializing.
+ */
+
+void Trapezoidal_Init(VELO_PROFILE *profile,
+                      float abs_start,
+                      float abs_goal,
+                      float v_max,
+                      float a_max)
+{
+    // 1) Record the absolute start
+    profile->start_offset = abs_start;
+
+    // 2) Compute total distance (always positive magnitude)
+    float delta = abs_goal - abs_start;
+    profile->distance_total = fabsf(delta);
+
+    // 3) Direction is +1 if goal >= start, else −1
+    profile->direction = (delta >= 0.0f) ? +1.0f : -1.0f;
+
+    // 4) Reset internal state: we march current_position from 0 → distance_total
+    profile->current_position = 0.0f;
+    profile->current_velocity = 0.0f;
+    profile->target_position = profile->distance_total;
+    profile->finished = 0;
+
+    // 5) Store v_max / a_max
+    profile->v_max = fabsf(v_max);
+    profile->a_max = fabsf(a_max);
+
+    // 6) Decide whether this is triangular or full trapezoid
+    float d_min = (profile->v_max * profile->v_max) / profile->a_max;
+    if (profile->distance_total < d_min) {
+        // need a triangular shape
+        profile->is_triangular = 1;
+        profile->v_peak = sqrtf(profile->a_max * profile->distance_total);
+    } else {
+        // can do full trapezoid (cruise at v_max)
+        profile->is_triangular = 0;
+        profile->v_peak = profile->v_max;
+    }
+}
+
+void Trapezoidal_Update(VELO_PROFILE *profile, float dt)
+{
+    if (profile->finished) {
+        // nothing to do if already finished
+        return;
+    }
+
+    // How far remains (in local “0→distance_total” units)?
+    float remaining = profile->target_position - profile->current_position;
+
+    // Compute stopping distance = v^2 / (2 a)
+    float stopping_dist = (profile->current_velocity * profile->current_velocity)
+                          / (2.0f * profile->a_max);
+
+    // 1) Decide accelerate or decelerate
+    if (fabsf(remaining) <= stopping_dist) {
+        // We are within braking distance → decelerate
+        profile->current_velocity -= profile->a_max * dt * profile->direction;
+
+        // Don’t reverse direction: clamp to zero if sign flips
+        if ((profile->direction > 0.0f && profile->current_velocity < 0.0f) ||
+            (profile->direction < 0.0f && profile->current_velocity > 0.0f)) {
+            profile->current_velocity = 0.0f;
+        }
+    } else {
+        // Not yet at braking zone → accelerate up toward v_peak
+        if (fabsf(profile->current_velocity) < profile->v_peak) {
+            profile->current_velocity += profile->a_max * dt * profile->direction;
+            // Clamp to peak if overshoot
+            if (fabsf(profile->current_velocity) > profile->v_peak) {
+                profile->current_velocity = profile->v_peak * profile->direction;
+            }
+        }
+        // If already at v_peak, just hold it (no extra logic needed for cruise)
+    }
+
+    // 2) Integrate to update position
+    profile->current_position += profile->current_velocity * dt;
+
+    // 3) Check for “arrived” (in local coordinates)
+    if ((profile->direction > 0.0f && profile->current_position >= profile->target_position) ||
+        (profile->direction < 0.0f && profile->current_position <= profile->target_position)) {
+        profile->current_position = profile->target_position;
+        profile->current_velocity = 0.0f;
+        profile->finished = 1;
+    }
+}
