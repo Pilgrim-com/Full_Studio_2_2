@@ -20,4 +20,4 @@
 ../Core/Src/main.c:1304:6:map	1
 ../Core/Src/main.c:1308:7:mapf	1
 ../Core/Src/main.c:1312:6:HAL_TIM_PeriodElapsedCallback	110
-../Core/Src/main.c:1795:6:Error_Handler	1
+../Core/Src/main.c:1796:6:Error_Handler	1

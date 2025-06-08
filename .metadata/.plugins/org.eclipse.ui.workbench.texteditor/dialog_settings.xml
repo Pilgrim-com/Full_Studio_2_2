@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<item key="hasShownOverlayPopupBefore" value="true"/>
-	<item key="replaceBarOpen" value="false"/>
+	<item key="replaceBarOpen" value="true"/>
 	<list key="searchhistory">
+		<item value="{ -1, -1 },  // pen-up marker"/>
+		<item value="Kp"/>
+		<item value="STATE_STOPPING"/>
+		<item value="current"/>
+		<item value="currentt"/>
+		<item value="STATE_STOP"/>
+		<item value="button"/>
+		<item value="htim8"/>
+		<item value="htim1"/>
+		<item value="servo"/>
 		<item value="limit_l"/>
 		<item value="output_revolute"/>
 		<item value="HAL_ADC_Start_DMA"/>
 		<item value="flag"/>
+	</list>
+	<list key="replacehistory">
+		<item value=" "/>
 	</list>
 </section>

@@ -1470,11 +1470,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			if (count_run <= 1500) {
 				output_prismatic = 0;
 				output_revolute = 0;
-				registerFrame[4].U16 = 1;
-				registerFrame[5].U16 = 0;
+//				registerFrame[4].U16 = 1;
+//				registerFrame[5].U16 = 0;
 
 				count_run++;
-			} else {
+			}
+			else {
 				if (limit_r != 1) {
 					output_prismatic = -(65535 / 2.0);
 				} else if (limit_r == 1) {
@@ -1573,8 +1574,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			break;
 		case STATE_JOGGING:
 			//Call joystick mode
-			registerFrame[4].U16 = 1;
-			registerFrame[5].U16 = 0;
+//			registerFrame[4].U16 = 1;
+//			registerFrame[5].U16 = 0;
 			joy_flag = 1;
 
 			if (limit_r == 1) {
@@ -1678,8 +1679,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			if (output_prismatic == 0 && output_revolute == 0
 					&& prisProfile.finished && revProfile.finished) {
 				pointRunNeedsInit = 1;
-				registerFrame[4].U16 = 0;
-				registerFrame[5].U16 = 1;
+//				registerFrame[4].U16 = 0;
+//				registerFrame[5].U16 = 1;
 			}
 			if (button_run == 1){
 				running_flang = 0;
@@ -1688,8 +1689,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			pen_flag = 0;
 			break;
 		case STATE_POINT_MOVING:
-			registerFrame[4].U16 = 1;
-			registerFrame[5].U16 = 0;
+//			registerFrame[4].U16 = 1;
+//			registerFrame[5].U16 = 0;
 			theta = (float) (registerFrame[65].U16);
 			if (theta <= 1800) {
 				target_position_revolute = (float) (registerFrame[65].U16
@@ -1767,8 +1768,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 			limit_l_prev = 0;
 			output_revolute = 0;
 			output_prismatic = 0;
-			registerFrame[4].U16 = 0;
-			registerFrame[5].U16 = 1;
+//			registerFrame[4].U16 = 0;
+//			registerFrame[5].U16 = 1;
 			pen_flag = 0;
 			break;
 
