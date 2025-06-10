@@ -3,20 +3,21 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="true"/>
 	<list key="searchhistory">
+		<item value="Kd_pos_re"/>
+		<item value="// pen-up marker"/>
+		<item value="path_idx_prev"/>
+		<item value="path"/>
+		<item value="ball_screw_pos"/>
+		<item value="run_prev"/>
+		<item value="count_run"/>
+		<item value="count"/>
+		<item value="target"/>
 		<item value="{ -1, -1 },  // pen-up marker"/>
 		<item value="Kp"/>
 		<item value="STATE_STOPPING"/>
 		<item value="current"/>
 		<item value="currentt"/>
 		<item value="STATE_STOP"/>
-		<item value="button"/>
-		<item value="htim8"/>
-		<item value="htim1"/>
-		<item value="servo"/>
-		<item value="limit_l"/>
-		<item value="output_revolute"/>
-		<item value="HAL_ADC_Start_DMA"/>
-		<item value="flag"/>
 	</list>
 	<list key="replacehistory">
 		<item value=" "/>
