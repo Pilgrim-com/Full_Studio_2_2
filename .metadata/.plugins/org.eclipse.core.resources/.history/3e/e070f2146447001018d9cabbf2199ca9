@@ -1423,10 +1423,10 @@ void Revolute_CasCadeControl() {
 	error_pos_re = setpoint_rev_abs - revolute_encoder.rads;
 	output_pos_re = arm_pid_f32(&PID_POS_re, error_pos_re);
 
-	if (output_pos_re > 300) {
-		output_pos_re = 300;
-	} else if (output_pos_re < -300) {
-		output_pos_re = -300;
+	if (output_pos_re > 1.9) {
+		output_pos_re = 1.9;
+	} else if (output_pos_re < -1.9) {
+		output_pos_re = -1.9;
 	}
 
 	error_velo_re = output_pos_re - (revolute_encoder.radps);
@@ -1871,7 +1871,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 				Trapezoidal_Update(&revProfile, 0.001f);
 			}
 
-			if (output_prismatic == 0.0 && output_revolute == 0.0
+			if (output_prismatic == 0 && output_revolute == 0
 					&& prisProfile.finished && revProfile.finished) {
 
 				if (ten_flag == 0) {
@@ -1900,21 +1900,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 				Revolute_CasCadeControl();
 				Prismatic_CasCadeControl();
 
-				if (target_position_revolute > revolute_encoder.rads && output_revolute < 0.0)
-				{
-					output_revolute = 30000;
-				}
-				else if (target_position_revolute < revolute_encoder.rads && output_revolute > 0.0)
-				{
-					output_revolute = -30000;
-				}
-
-				if (limit_r == 1 && limit_l_prev == 0.0) {
-					output_prismatic = 0.0;
+				if (limit_r == 1 && limit_l_prev == 0) {
+					output_prismatic = 0;
 				}
 
 				if (revolute_flag == 1 && revolute_homed == 0) {
-					output_revolute = 0.0;
+					output_revolute = 0;
 				}
 
 			}

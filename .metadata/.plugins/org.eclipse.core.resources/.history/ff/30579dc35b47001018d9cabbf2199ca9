@@ -185,8 +185,8 @@ float error_rads = 0.0;
 //float Kp_pos_re = 3.0;				//original 5
 //float Ki_pos_re = 0.00035;         //8.5;    //8.5;
 //float Kd_pos_re = 2.0;
-float Kp_pos_re = 5.0;				//original 5
-float Ki_pos_re = 0.0003;         //0.0003
+float Kp_pos_re = 3.0;				//original 5
+float Ki_pos_re = 0.0003;         //8.5;
 float Kd_pos_re = 0.0;
 float output_pos_re = 0.00;
 float error_pos_re = 0.00;
@@ -196,7 +196,7 @@ float error_pos_re = 0.00;
 //float Ki_velo_re = 0.2;         //8.5;
 //float Kd_velo_re = 0.0;
 float Kp_velo_re = 5000.0;			//original 5000
-float Ki_velo_re = 0.5;         //0.5;
+float Ki_velo_re = 0.5;         //8.5;
 float Kd_velo_re = 0.0;
 float output_velo_re = 0.00;
 float error_velo_re = 0.00;
@@ -1404,10 +1404,10 @@ void Prismatic_CasCadeControl() {
 	output_velo_pris = PIDCompute(&prismatic_vel_control, Kp_velo_pris,
 			Ki_velo_pris, Kd_velo_pris, error_velo_pris);
 
-	if (limit_r == 1 && output_prismatic < 0.0) {
-		output_prismatic = 0.0;
-	} else if (limit_l == 1 && output_prismatic > 0.0) {
-		output_prismatic = 0.0;
+	if (limit_r == 1 && output_prismatic < 0) {
+		output_prismatic = 0;
+	} else if (limit_l == 1 && output_prismatic > 0) {
+		output_prismatic = 0;
 	}
 
 	// Motor control}
@@ -1429,19 +1429,19 @@ void Revolute_CasCadeControl() {
 		output_pos_re = -300;
 	}
 
-	error_velo_re = output_pos_re - (revolute_encoder.radps);
+	error_velo_re = output_pos_re - (revolute_encoder.radps / 2);
 
 	output_velo_re = PIDCompute(&revolute_vel_control, Kp_velo_re, Ki_velo_re,
 			Kd_velo_re, error_velo_re);
 
-	if (revolute_flag == 1 && output_revolute > 0.0) {
-		output_revolute = 0.0;
-	} else if (revolute_encoder.rads >= (2 * M_PI) && output_revolute < 0.0) {
-		output_revolute = 0.0;
+	if (revolute_flag == 1 && output_revolute > 0) {
+		output_revolute = 0;
+	} else if (revolute_encoder.rads >= (2 * M_PI) && output_revolute < 0) {
+		output_revolute = 0;
 	}
 	// Motor control
 	if (error_pos_re <= 0.0035 && error_pos_re >= -0.0035) {
-		output_revolute = 0.0;
+		output_revolute = 0;
 	} else {
 		output_revolute = output_velo_re;
 	}
@@ -1655,7 +1655,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 					QEIInit(&prismatic_encoder, &htim4, 8192, 1000, 65536);
 				}
 				if (revolute_flag != 1) {
-					output_revolute = -47500;
+					output_revolute = -50000;
 				} else if (revolute_flag == 1) {
 					revolute_homed = 1; // Check Proximity trick
 					output_revolute = 0;
@@ -1871,7 +1871,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 				Trapezoidal_Update(&revProfile, 0.001f);
 			}
 
-			if (output_prismatic == 0.0 && output_revolute == 0.0
+			if (output_prismatic == 0 && output_revolute == 0
 					&& prisProfile.finished && revProfile.finished) {
 
 				if (ten_flag == 0) {
@@ -1900,21 +1900,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 				Revolute_CasCadeControl();
 				Prismatic_CasCadeControl();
 
-				if (target_position_revolute > revolute_encoder.rads && output_revolute < 0.0)
-				{
-					output_revolute = 30000;
-				}
-				else if (target_position_revolute < revolute_encoder.rads && output_revolute > 0.0)
-				{
-					output_revolute = -30000;
-				}
-
-				if (limit_r == 1 && limit_l_prev == 0.0) {
-					output_prismatic = 0.0;
+				if (limit_r == 1 && limit_l_prev == 0) {
+					output_prismatic = 0;
 				}
 
 				if (revolute_flag == 1 && revolute_homed == 0) {
-					output_revolute = 0.0;
+					output_revolute = 0;
 				}
 
 			}
@@ -1987,28 +1978,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 				QEI_Reset(&revolute_encoder);
 				QEIInit(&revolute_encoder, &htim3, 8192, 1000, 65536);
 			}
+//			registerFrame[11].U16 = (int) (ball_screw_pos * 10);
+//			registerFrame[12].U16 = (int) (revolute_encoder.rads * (180 / 2 * M_PI)
+//					* 10);
+//			registerFrame[13].U16 = (int) (ball_screw_vel * 10);
+//			registerFrame[14].U16 = (int) (revProfile.current_velocity * (180 / 2 * M_PI)
+//					* 10);
+//			registerFrame[15].U16 = (int) (prismatic_acceleration_lowpass * 10);
+//			registerFrame[16].U16 = (int) (revolute_acceleration_lowpass * 10);
 
-			registerFrame[11].U16 = (int) (ball_screw_pos * 10);
-			registerFrame[12].U16 = (int) (revolute_encoder.rads * (180 / 2 * M_PI)
-					* 10);
-			registerFrame[13].U16 = (int) (ball_screw_vel * 10);
-			registerFrame[14].U16 = (int) (revProfile.current_velocity * (180 / 2 * M_PI)
-					* 10);
-			registerFrame[15].U16 = (int) (prismatic_acceleration_lowpass * 10);
-			registerFrame[16].U16 = (int) (revolute_acceleration_lowpass * 10);
-
-			if (output_prismatic == 0.0 && output_revolute == 0.0
+			if (output_prismatic == 0 && output_revolute == 0
 					&& prisProfile.finished && revProfile.finished) {
 				registerFrame[1].U16 = STATUS_STOP;
-			}
-
-			if (target_position_revolute > revolute_encoder.rads && output_revolute < 0)
-			{
-				output_revolute = 0.1;
-			}
-			else if (target_position_revolute < revolute_encoder.rads && output_revolute > 0)
-			{
-				output_revolute = -0.1;
 			}
 //			if (prisProfile.finished && revProfile.finished && output_prismatic == 0 ) {
 //				registerFrame[1].U16 = STATUS_STOP;

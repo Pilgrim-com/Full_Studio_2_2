@@ -1902,11 +1902,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 				if (target_position_revolute > revolute_encoder.rads && output_revolute < 0.0)
 				{
-					output_revolute = 30000;
+					output_revolute = 300000;
 				}
 				else if (target_position_revolute < revolute_encoder.rads && output_revolute > 0.0)
 				{
-					output_revolute = -30000;
+					output_revolute = -300000;
 				}
 
 				if (limit_r == 1 && limit_l_prev == 0.0) {
